@@ -21,14 +21,14 @@ createApp({
                     let requestData = JSON.parse(JSON.stringify(smCryptoRequest?.[getHeader('x-data-time', context.request)] || null))
                     let responseData = null;
                     try {
-                        data = JSON.parse(body);
+                        responseData = JSON.parse(body);
                         const isPublic = requestUrl.includes('/gupo-crypto/crypto/get-public-key')
                         if (isPublic) {
                             publicKey[origin] = data.data.public_key;
                         }
                         list.value.push({
                             url: requestUrl.replace(origin, '').split('?')[0],
-                            status: context.response.status,
+                            status: `${context.response.status}/${responseData.code}`,
                             requestParams: context.request.queryString,
                             requestData,
                             responseData: {
