@@ -1,0 +1,17 @@
+{
+    "manifest_version": 3,
+    "name": "gm-crypto",
+    "description": "国密解析插件",
+    "version": "1.0",
+    "devtools_page": "devtools.html",
+    "icons": {
+        "16": "icon.png",
+        "32": "icon.png",
+        "48": "icon.png",
+        "128": "icon.png"
+    },
+    "action": {
+      "default_popup": "hello.html",
+      "default_icon": "icon.png"
+    }
+  }
