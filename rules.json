@@ -5,7 +5,7 @@
       "action": {
         "type": "modifyHeaders",
         "requestHeaders": [
-          { "header": "x1-gp-color", "operation": "set", "value": "" }
+          { "header": "x1-gp-color-test", "operation": "set", "value": "" }
         ]
       },
       "condition": {

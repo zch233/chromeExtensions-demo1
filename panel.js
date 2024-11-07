@@ -1,27 +1,3 @@
-function setHeaderGray(enable) {
-    const rules = [
-        {
-            "id": 1,
-            "priority": 1,
-            "action": {
-                "type": "modifyHeaders",
-                "requestHeaders": [
-                    { "header": "x1-gp-color", "operation": "set", "value": enable ? "gray" : "" },
-                ]
-            },
-            "condition": {
-                "urlFilter": "<all_urls>",
-                "resourceTypes": ["main_frame", "sub_frame", "stylesheet", "script", "image", "font", "object", "xmlhttprequest", "ping", "csp_report", "media", "websocket", "other"]
-            }
-        }
-    ];
-
-    chrome.declarativeNetRequest.updateDynamicRules({
-        addRules: rules,
-        removeRuleIds: [1]
-    });
-}
-
 const { createApp, ref, h, nextTick } = Vue
 const publicKey = {}
 let smCryptoRequest = {}
@@ -124,6 +100,40 @@ createApp({
         )
     }
 }).mount('#gm_networks')
+
+const setHeaderGray = (enable) => {
+    chrome.declarativeNetRequest.updateSessionRules({
+        removeRuleIds: [1]
+    }, () => {
+        chrome.declarativeNetRequest.updateSessionRules({
+            addRules: [
+                {
+                    "id": 1,
+                    "priority": 1,
+                    "action": {
+                        "type": "modifyHeaders",
+                        "requestHeaders": [
+                            { "header": "x1-gp-color", "operation": "set", "value": enable ? "gray" : "" },
+                        ]
+                    },
+                    "condition": {
+                        "urlFilter": "*://*/*",
+                        "resourceTypes": ["main_frame", "sub_frame", "stylesheet", "script", "image", "font", "object", "xmlhttprequest", "ping", "csp_report", "media", "websocket", "other"]
+                    }
+                }
+            ],
+        }, () => {
+            if (chrome.runtime.lastError) {
+                console.error("Error updating rules:", chrome.runtime.lastError);
+            } else {
+                console.info("Rules updated successfully.");
+                setTimeout(() => {
+                    chrome.declarativeNetRequest.getSessionRules(rules => console.log(rules))
+                }, 2000)
+            }
+        });
+    });
+}
 
 const decryptViaSM4 = ({ data, key }) => sm4.decrypt(data, key, { /*mode: 'sm4-ecb', */ padding: 'pkcs#7' });
 const stringToHex = str => str.split('').reduce((res, v, i) => res + str.charCodeAt(i).toString(16), '');
