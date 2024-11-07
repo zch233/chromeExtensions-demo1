@@ -1,16 +1,43 @@
-chrome.webRequest.onBeforeSendHeaders.addListener((details) => {
-    chrome.devtools.inspectedWindow.eval('window.smCryptoRequest', (result, isException) => {
-        if (isException) {
-            console.error('inspectedWindow:', isException);
-        } else {
-            smCryptoRequest = result
+function setHeaderGray(enable) {
+    const rules = [
+        {
+            "id": 1,
+            "priority": 1,
+            "action": {
+                "type": "modifyHeaders",
+                "requestHeaders": [
+                    { "header": "x1-gp-color", "operation": "set", "value": enable ? "gray" : "" },
+                ]
+            },
+            "condition": {
+                "urlFilter": "<all_urls>",
+                "resourceTypes": ["main_frame", "sub_frame", "stylesheet", "script", "image", "font", "object", "xmlhttprequest", "ping", "csp_report", "media", "websocket", "other"]
+            }
         }
+    ];
+
+    chrome.declarativeNetRequest.updateDynamicRules({
+        addRules: rules,
+        removeRuleIds: [1]
     });
-}, {urls: ["<all_urls>"]});
+}
 
 const { createApp, ref, h, nextTick } = Vue
 const publicKey = {}
 let smCryptoRequest = {}
+
+chrome.webRequest.onBeforeSendHeaders.addListener((details) => {
+    const time = details.requestHeaders.find(v => v.name.toLowerCase() === 'x-data-time')?.value
+    if (time) {
+        chrome.devtools.inspectedWindow.eval('window.smCryptoRequest', (result, isException) => {
+            if (isException) {
+                console.error('inspectedWindow:', isException);
+            } else {
+                smCryptoRequest[time] = result[time]?.data || null
+            }
+        });
+    }
+}, { urls: ["<all_urls>"] }, ['requestHeaders']);
 
 createApp({
     setup() {
@@ -22,7 +49,7 @@ createApp({
                 if (getHeader('content-type') === 'application/json') {
                     const requestUrl = context.request.url
                     const origin = requestUrl.split('/').slice(0, 4).join('/')
-                    let requestData = JSON.parse(JSON.stringify(smCryptoRequest?.[getHeader('x-data-time', context.request)] || null))
+                    let requestData = smCryptoRequest?.[getHeader('x-data-time', context.request)] || null
                     let responseData = null;
                     try {
                         responseData = JSON.parse(body);
@@ -34,7 +61,7 @@ createApp({
                             url: requestUrl.replace(origin, '').split('?')[0],
                             status: `${context.response.status}/${responseData.code}`,
                             requestParams: context.request.queryString,
-                            requestData: JSON.parse(JSON.stringify(requestData?.data || null)),
+                            requestData: requestData,
                             responseData: {
                                 ...responseData,
                                 data: responseData?.data && ((isPublic || getHeader('x-is-safety') !== '1') ? responseData.data : decryptResponse(responseData.data, getHeader('x-data-time'), publicKey[origin])),
@@ -53,6 +80,7 @@ createApp({
         });
         const clear = () => {
             list.value = []
+            smCryptoRequest = {}
         }
         const toggleDetail = (e, v, i) => {
             if (e.target.open) {
@@ -75,7 +103,7 @@ createApp({
         return () => h(
             'div', { id: 'gm_networks_tools' },
             [
-                h('div', { id: 'gm_networks_tools_header' }, [h('p', {}, 'Network'), h('span', { onClick: clear }, '🈚')]),
+                h('div', { id: 'gm_networks_tools_header' }, [h('p', {}, [h('span', {}, 'Network-是否灰度'), h('input', { type: 'checkbox', value: 'isGray', switch: true, onChange: (e) => setHeaderGray(e.target.checked) })]), h('span', { onClick: clear }, '🈚')]),
                 h('div', { id: 'gm_networks_tools_content' },
                     list.value.map((item, index) => h('div', { key: index }, h('details', { onToggle: (event) => toggleDetail(event, item, index), ref: el => detailRefs[index] = el }, [
                         h('summary', {}, `【${item.status}】${item.url}`),

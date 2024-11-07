@@ -15,9 +15,19 @@
       "default_icon": "icon.png"
     },
     "permissions": [
-      "webRequest"
+      "webRequest",
+      "declarativeNetRequest",
+      "declarativeNetRequestWithHostAccess",
+      "declarativeNetRequestFeedback"
     ],
     "host_permissions": [
       "*://*/*"
-    ]
+    ],
+    "declarative_net_request": {
+      "rule_resources": [{
+        "id": "ruleset_1",
+        "enabled": true,
+        "path": "rules.json"
+      }]
+    }
   }
