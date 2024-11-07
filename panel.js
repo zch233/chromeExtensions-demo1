@@ -1,13 +1,17 @@
+chrome.webRequest.onBeforeSendHeaders.addListener((details) => {
+    chrome.devtools.inspectedWindow.eval('window.smCryptoRequest', (result, isException) => {
+        if (isException) {
+            console.error('inspectedWindow:', isException);
+        } else {
+            smCryptoRequest = result
+        }
+    });
+}, {urls: ["<all_urls>"]});
+
 const { createApp, ref, h, nextTick } = Vue
 const publicKey = {}
 let smCryptoRequest = {}
-chrome.devtools.inspectedWindow.eval('window.smCryptoRequest', (result, isException) => {
-    if (isException) {
-        console.error('inspectedWindow:', isException);
-    } else {
-        smCryptoRequest = result
-    }
-});
+
 createApp({
     setup() {
         const list = ref([]);
@@ -17,20 +21,20 @@ createApp({
             context.getContent((body) => {
                 if (getHeader('content-type') === 'application/json') {
                     const requestUrl = context.request.url
-                    const origin = new URL(requestUrl).origin
+                    const origin = requestUrl.split('/').slice(0, 4).join('/')
                     let requestData = JSON.parse(JSON.stringify(smCryptoRequest?.[getHeader('x-data-time', context.request)] || null))
                     let responseData = null;
                     try {
                         responseData = JSON.parse(body);
                         const isPublic = requestUrl.includes('/gupo-crypto/crypto/get-public-key')
                         if (isPublic) {
-                            publicKey[origin] = data.data.public_key;
+                            publicKey[origin] = responseData.data.public_key;
                         }
                         list.value.push({
                             url: requestUrl.replace(origin, '').split('?')[0],
                             status: `${context.response.status}/${responseData.code}`,
                             requestParams: context.request.queryString,
-                            requestData,
+                            requestData: JSON.parse(JSON.stringify(requestData?.data || null)),
                             responseData: {
                                 ...responseData,
                                 data: responseData?.data && ((isPublic || getHeader('x-is-safety') !== '1') ? responseData.data : decryptResponse(responseData.data, getHeader('x-data-time'), publicKey[origin])),
@@ -41,7 +45,7 @@ createApp({
                         list.value.push({
                             url: requestUrl.replace(origin, '').split('?')[0],
                             status: '🤐',
-                            responseData: { message: '别展开了，我不想解析这个鬼东西(not a json)' },
+                            responseData: { message: '别展开了，解析不了' },
                         });
                     }
                 }
@@ -66,156 +70,7 @@ createApp({
             }
         }
         const copy = (contentText) => {
-            const deselectCurrent = () => {
-                const selection = document.getSelection();
-                if (!selection.rangeCount) {
-                    return function () { };
-                }
-                let active = document.activeElement;
-
-                const ranges = [];
-                for (let i = 0; i < selection.rangeCount; i++) {
-                    ranges.push(selection.getRangeAt(i));
-                }
-
-                switch (
-                active.tagName.toUpperCase() // .toUpperCase handles XHTML
-                ) {
-                    case 'INPUT':
-                    case 'TEXTAREA':
-                        active.blur();
-                        break;
-
-                    default:
-                        active = null;
-                        break;
-                }
-
-                selection.removeAllRanges();
-                return function () {
-                    selection.type === 'Caret' && selection.removeAllRanges();
-
-                    if (!selection.rangeCount) {
-                        ranges.forEach(function (range) {
-                            selection.addRange(range);
-                        });
-                    }
-
-                    active && active.focus();
-                };
-            };
-
-            const clipboardToIE11Formatting = {
-                'text/plain': 'Text',
-                'text/html': 'Url',
-                default: 'Text',
-            };
-
-            const defaultMessage = 'Copy to clipboard: #{key}, Enter';
-
-            function format(message) {
-                const copyKey = `${/mac os x/i.test(navigator.userAgent) ? '⌘' : 'Ctrl'}+C`;
-                return message.replaceAll(/#{\s*key\s*}/g, copyKey);
-            }
-
-            function copy(text, options) {
-                const debug = options?.debug || false;
-                let message;
-                let reselectPrevious;
-                let range;
-                let selection;
-                let mark;
-                let success = false;
-                if (!options) {
-                    options = {};
-                }
-                try {
-                    reselectPrevious = deselectCurrent();
-
-                    range = document.createRange();
-                    selection = document.getSelection();
-
-                    mark = document.createElement('span');
-                    mark.textContent = text;
-                    // avoid screen readers from reading out loud the text
-                    mark.ariaHidden = 'true';
-                    // reset user styles for span element
-                    mark.style.all = 'unset';
-                    // prevents scrolling to the end of the page
-                    mark.style.position = 'fixed';
-                    mark.style.top = '0';
-                    mark.style.clip = 'rect(0, 0, 0, 0)';
-                    // used to preserve spaces and line breaks
-                    mark.style.whiteSpace = 'pre';
-                    // do not inherit user-select (it may be `none`)
-                    mark.style.webkitUserSelect = 'text';
-                    mark.style.MozUserSelect = 'text';
-                    mark.style.msUserSelect = 'text';
-                    mark.style.userSelect = 'text';
-                    mark.addEventListener('copy', function (e) {
-                        e.stopPropagation();
-                        if (options.format) {
-                            e.preventDefault();
-                            if (typeof e.clipboardData === 'undefined') {
-                                // IE 11
-                                debug && console.warn('unable to use e.clipboardData');
-                                debug && console.warn('trying IE specific stuff');
-                                window.clipboardData.clearData();
-                                const myFormat = clipboardToIE11Formatting[options.format] || clipboardToIE11Formatting.default;
-                                window.clipboardData.setData(myFormat, text);
-                            } else {
-                                // all other browsers
-                                e.clipboardData.clearData();
-                                e.clipboardData.setData(options.format, text);
-                            }
-                        }
-                        if (options.onCopy) {
-                            e.preventDefault();
-                            options.onCopy(e.clipboardData);
-                        }
-                    });
-
-                    document.body.append(mark);
-
-                    range.selectNodeContents(mark);
-                    selection.addRange(range);
-
-                    const successful = document.execCommand('copy');
-                    if (!successful) {
-                        throw new Error('copy command was unsuccessful');
-                    }
-                    success = true;
-                } catch (error) {
-                    debug && console.error('unable to copy using execCommand:', error);
-                    debug && console.warn('trying IE specific stuff');
-                    try {
-                        window.clipboardData.setData(options.format || 'text', text);
-                        options.onCopy && options.onCopy(window.clipboardData);
-                        success = true;
-                    } catch (error) {
-                        debug && console.error('unable to copy using clipboardData:', error);
-                        debug && console.error('falling back to prompt');
-                        message = format('message' in options ? options.message : defaultMessage);
-                        window.prompt(message, text);
-                    }
-                } finally {
-                    if (selection) {
-                        if (typeof selection.removeRange == 'function') {
-                            selection.removeRange(range);
-                        } else {
-                            selection.removeAllRanges();
-                        }
-                    }
-
-                    if (mark) {
-                        mark.remove();
-                    }
-                    reselectPrevious();
-                }
-
-                return success;
-            }
-            copy(typeof contentText === 'string' ? contentText : JSON.stringify(contentText))
+            _copy(typeof contentText === 'string' ? contentText : JSON.stringify(contentText))
         }
         return () => h(
             'div', { id: 'gm_networks_tools' },
@@ -276,3 +131,153 @@ const decryptResponse = (data, time, publicKey) => {
     }
     return _data;
 };
+
+const deselectCurrent = () => {
+    const selection = document.getSelection();
+    if (!selection.rangeCount) {
+        return function () { };
+    }
+    let active = document.activeElement;
+
+    const ranges = [];
+    for (let i = 0; i < selection.rangeCount; i++) {
+        ranges.push(selection.getRangeAt(i));
+    }
+
+    switch (
+    active.tagName.toUpperCase() // .toUpperCase handles XHTML
+    ) {
+        case 'INPUT':
+        case 'TEXTAREA':
+            active.blur();
+            break;
+
+        default:
+            active = null;
+            break;
+    }
+
+    selection.removeAllRanges();
+    return function () {
+        selection.type === 'Caret' && selection.removeAllRanges();
+
+        if (!selection.rangeCount) {
+            ranges.forEach(function (range) {
+                selection.addRange(range);
+            });
+        }
+
+        active && active.focus();
+    };
+};
+
+const clipboardToIE11Formatting = {
+    'text/plain': 'Text',
+    'text/html': 'Url',
+    default: 'Text',
+};
+
+const defaultMessage = 'Copy to clipboard: #{key}, Enter';
+
+function format(message) {
+    const copyKey = `${/mac os x/i.test(navigator.userAgent) ? '⌘' : 'Ctrl'}+C`;
+    return message.replaceAll(/#{\s*key\s*}/g, copyKey);
+}
+
+function _copy(text, options) {
+    const debug = options?.debug || false;
+    let message;
+    let reselectPrevious;
+    let range;
+    let selection;
+    let mark;
+    let success = false;
+    if (!options) {
+        options = {};
+    }
+    try {
+        reselectPrevious = deselectCurrent();
+
+        range = document.createRange();
+        selection = document.getSelection();
+
+        mark = document.createElement('span');
+        mark.textContent = text;
+        // avoid screen readers from reading out loud the text
+        mark.ariaHidden = 'true';
+        // reset user styles for span element
+        mark.style.all = 'unset';
+        // prevents scrolling to the end of the page
+        mark.style.position = 'fixed';
+        mark.style.top = '0';
+        mark.style.clip = 'rect(0, 0, 0, 0)';
+        // used to preserve spaces and line breaks
+        mark.style.whiteSpace = 'pre';
+        // do not inherit user-select (it may be `none`)
+        mark.style.webkitUserSelect = 'text';
+        mark.style.MozUserSelect = 'text';
+        mark.style.msUserSelect = 'text';
+        mark.style.userSelect = 'text';
+        mark.addEventListener('copy', function (e) {
+            e.stopPropagation();
+            if (options.format) {
+                e.preventDefault();
+                if (typeof e.clipboardData === 'undefined') {
+                    // IE 11
+                    debug && console.warn('unable to use e.clipboardData');
+                    debug && console.warn('trying IE specific stuff');
+                    window.clipboardData.clearData();
+                    const myFormat = clipboardToIE11Formatting[options.format] || clipboardToIE11Formatting.default;
+                    window.clipboardData.setData(myFormat, text);
+                } else {
+                    // all other browsers
+                    e.clipboardData.clearData();
+                    e.clipboardData.setData(options.format, text);
+                }
+            }
+            if (options.onCopy) {
+                e.preventDefault();
+                options.onCopy(e.clipboardData);
+            }
+        });
+
+        document.body.append(mark);
+
+        range.selectNodeContents(mark);
+        selection.addRange(range);
+
+        const successful = document.execCommand('copy');
+        if (!successful) {
+            throw new Error('copy command was unsuccessful');
+        }
+        success = true;
+    } catch (error) {
+        debug && console.error('unable to copy using execCommand:', error);
+        debug && console.warn('trying IE specific stuff');
+        try {
+            window.clipboardData.setData(options.format || 'text', text);
+            options.onCopy && options.onCopy(window.clipboardData);
+            success = true;
+        } catch (error) {
+            debug && console.error('unable to copy using clipboardData:', error);
+            debug && console.error('falling back to prompt');
+            message = format('message' in options ? options.message : defaultMessage);
+            window.prompt(message, text);
+        }
+    } finally {
+        if (selection) {
+            if (typeof selection.removeRange == 'function') {
+                selection.removeRange(range);
+            } else {
+                selection.removeAllRanges();
+            }
+        }
+
+        if (mark) {
+            mark.remove();
+        }
+        reselectPrevious();
+    }
+
+    return success;
+}
